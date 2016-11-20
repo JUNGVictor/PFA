@@ -10,3 +10,5 @@ NBSQUARESHEIGHT  ;Nombre de carrés par colonne
 NBSQUARESWIDTH  ;Nombre de carrés par ligne
 
 LSQUARES  ;Liste de tous les objets de la classe square%
+
+SQUARECOPY  ;Objet de la classe square% qui prendra les valeurs du carré sélectionné avec le bouton "Copier"
