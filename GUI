@@ -1,0 +1,162 @@
+#lang racket/gui
+
+(require rackunit rsound rsound/piano-tones)
+
+(printf "Host-APIs disponibles: ~a~n" (all-host-apis))
+(host-api 'paMME)
+
+
+(define (note->number)
+  (define n (send CHOICENOTE get-selection))
+  (define r (send CHOICERANGE get-value))
+  (+ (* (+ r 1) 12) n))
+;#############################GUI
+(define SIZE 800)
+
+(define FRAME
+  (new frame%
+       (label "Nom du projet")
+       (stretchable-width #f)
+       (stretchable-height #f)))
+
+(define HPANEL
+  (new horizontal-panel%
+       (parent FRAME)
+       (alignment '(center center))))
+
+
+;####################Panneau pour éditer un objet square%
+(define VPANELEDITION
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+;Indiquer le carré sélectionné
+(define TITLEEDITION
+  (new message%
+       (parent VPANELEDITION)
+       (label "Carré N°")
+       (vert-margin 30)))
+
+;Choisir la gamme
+(define CHOICERANGE   ;
+  (new slider%
+       (parent VPANELEDITION)
+       (label "Gamme")
+       (style '(vertical))
+       (min-value 1)
+       (max-value 8)
+       (init-value 5)
+       (min-height 100)
+       (stretchable-height #f)))
+
+;Choisir la note
+(define CHOICENOTE   ;
+  (new radio-box%
+       (parent VPANELEDITION)
+       (label "Note")
+       (choices '("Do" "Do#" "Ré" "Ré#" "Mi" "Fa" "Fa#" "Sol" "Sol#" "La" "La#" "Si"))))
+
+;Ecouter la note actuelle
+(define BOUTTONTEST
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 20)
+       (label "Test")
+       (callback
+        (lambda (b evt)
+               (play (piano-tone (note->number)))))))
+
+;Choisir après combien de temps la prochaine note se joue
+(define CHOICEDURATION
+  (new text-field%
+       (parent VPANELEDITION)
+       (vert-margin 30)
+       (label "Durée en secondes :")
+       (init-value "1")))
+
+;Copie les caractéristiques du carré sélectionné
+(define BUTTONCOPY
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Copier")))
+
+;Ecris les valeurs enregistrées par le bouton "Copier" dans les champs correspondants
+(define BUTTONPASTE
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Coller")))
+
+;Applique les valeurs rentrées au carré sélectionné
+(define BUTTONSET
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (min-width 200)
+       (label "Appliquer les\nchangements")))
+
+
+;####################Canvas
+(define CANVAS
+  (new canvas%
+       (parent HPANEL)
+       (style '(border))
+       (min-width SIZE)
+       (min-height SIZE)))
+
+
+;####################Panneau des options
+(define VPANELSETTINGS
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+(define TITLESETTINGS
+  (new message%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Options")))
+
+;
+(define IGNOREALLSQUAREDEFAULT
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Ignorer tous les carrés d")))
+
+;
+(define IGNOREAB
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "ignorer carrés B/A")))
+
+;
+(define PLAYALL
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Tout jouer")))
+
+;Permet de jouer la partition en boucle
+(define LOOP
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Jouer en boucle")))
+
+;Commence à jouer la partition depuis le carré sélectionné
+(define BUTTONPLAY
+  (new button%
+       (parent VPANELSETTINGS)
+       (vert-margin 100)
+       (min-height 200)
+       (min-width 200)
+       (label "Jouer")))
+
+
+(send FRAME show #t)
