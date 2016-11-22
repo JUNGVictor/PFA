@@ -1,0 +1,290 @@
+#lang racket/gui
+
+(require rackunit rsound rsound/piano-tones)
+
+(printf "Host-APIs disponibles: ~a~n" (all-host-apis))
+(host-api 'paMME)
+
+
+(define (note->number)
+  (define note (send CHOICENOTE get-selection))
+  (define gamme (send CHOICERANGE get-value))
+  (+ (* (+ gamme 1) 12) note))
+
+;#############################GUI
+(define SIZE 800)
+
+(define FRAME
+  (new frame%
+       (label "Nom du projet")
+       (stretchable-width #f)
+       (stretchable-height #f)))
+
+(define HPANEL
+  (new horizontal-panel%
+       (parent FRAME)
+       (alignment '(center center))))
+
+
+;####################Panneau pour éditer un objet square%
+(define VPANELEDITION
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+;Indiquer le carré sélectionné
+(define TITLEEDITION
+  (new text-field%
+       (parent VPANELEDITION)
+       (label "Carré N°")
+       (vert-margin 30)
+       (init-value "1")))
+
+;On charge les valeurs du carré selectionné
+(define UPDATEBUTTON
+  (new button%
+       (parent VPANELEDITION)
+       (label "Update")
+       (callback
+        (lambda (b evt)
+          (define square (string->number (send TITLEEDITION get-value)))
+               (loadSquare square)))))
+
+;Choisir la gamme
+(define CHOICERANGE   ;
+  (new slider%
+       (parent VPANELEDITION)
+       (label "Gamme")
+       (style '(vertical))
+       (min-value 1)
+       (max-value 8)
+       (init-value 5)
+       (min-height 100)
+       (stretchable-height #f)))
+
+;Choisir la note
+(define CHOICENOTE   ;
+  (new choice%
+       (parent VPANELEDITION)
+       (label "Note")
+       (choices '("Do" "Do#" "Ré" "Ré#" "Mi" "Fa" "Fa#" "Sol" "Sol#" "La" "La#" "Si"))))
+
+;Ecouter la note actuelle
+(define BOUTTONTEST
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 20)
+       (label "Test")
+       (callback
+        (lambda (b evt)
+               (play (piano-tone (note->number)))))))
+
+;Choisir après combien de temps la prochaine note se joue
+(define CHOICEDURATION
+  (new text-field%
+       (parent VPANELEDITION)
+       (vert-margin 30)
+       (label "Durée en secondes :")
+       (init-value "1")))
+
+;Copie les caractéristiques du carré sélectionné
+(define BUTTONCOPY
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Copier")
+       (callback
+        (lambda (b evt)
+          (copyValues)))))
+
+;Ecris les valeurs enregistrées par le bouton "Copier" dans les champs correspondants
+(define BUTTONPASTE
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Coller")
+       (callback
+        (lambda (b evt)
+          (pasteValues)))))
+
+;Applique les valeurs rentrées au carré sélectionné
+(define BUTTONSET
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (min-width 200)
+       (label "Appliquer les\nchangements")
+       (callback
+        (lambda (b evt)
+          (define numerocarre (string->number (send TITLEEDITION get-value)))
+          (define duree (string->number (send CHOICEDURATION get-value)))
+          (define note (make-note (note->number) (send CHOICERANGE get-value)))
+          (setTypedValue numerocarre (list note 'green duree))))))
+
+
+;####################Canvas
+(define CANVAS
+  (new canvas%
+       (parent HPANEL)
+       (style '(border))
+       (min-width SIZE)
+       (min-height SIZE)))
+
+
+;####################Panneau des options
+(define VPANELSETTINGS
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+(define TITLESETTINGS
+  (new message%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Options")))
+
+;
+(define IGNOREALLSQUAREDEFAULT
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Ignorer tous les carrés d")))
+
+;
+(define IGNOREAB
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "ignorer carrés B/A")))
+
+;
+(define PLAYALL
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Tout jouer")))
+
+;Permet de jouer la partition en boucle
+(define LOOP
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Jouer en boucle")))
+
+;Commence à jouer la partition depuis le carré sélectionné
+(define BUTTONPLAY
+  (new button%
+       (parent VPANELSETTINGS)
+       (vert-margin 100)
+       (min-height 200)
+       (min-width 200)
+       (label "Jouer")))
+
+
+(send FRAME show #t)
+
+
+(define (sec n)
+(inexact->exact (round (* n 44100))))
+
+(define (squares% n)
+  (class object%                     
+    ;On donne accès à ces fonctions :
+    (public not-sound? getSound getColor getNumber getDuration giveValues isIgnored? playSound changeSound changeColor toggleIgnore changeDuration giveAll changeAll)
+    
+    (define number n)            ;numéro du triangle
+    (define sound null)          ;pas de son par défaut - son : structure
+    (define color 'grey)         ;couleur grise
+    (define ignore? #f)          ;non ignoré
+    (define duration 1)          ;durée avant de passer au triangle suivant (en secondes)
+    ;#######################################
+    ;RECUPERATION DES VARIABLES
+    ;RECUPERER TOUTES LES VARIABLES (sauf numero)
+    (define (giveAll)
+      (list sound color ignore? duration))
+    ;Un son est-il défini? #t si non, #f si oui
+    (define (not-sound?)
+      (null? sound))
+    ;Recupérer le son
+    (define (getSound)
+      sound)
+    ;Recupérer la duree
+    (define (getDuration)
+      duration)
+    ;Récupérer la couleur
+    (define (getColor)
+      color)
+    ;Récupérer le numéro du triangle
+    (define (getNumber)
+      number)
+    ;Recupere les valeurs sound, color et duration dans une liste
+    (define (giveValues)
+      (list sound color duration))
+    ;Le triangle est-il ignoré? (si oui, on ne le joue pas)
+    (define (isIgnored?)
+      ignore?)
+    ;Jouer le son
+    (define (playSound)
+      (play (piano-tone (note-num sound))))
+    ;#######################################
+    ;MODIFICATION DES VARIABLES
+    ;CHANGE TOUTES LES VARIABLES
+    (define (changeAll liste)    ;liste : (list sound color ignore? duration)
+      (set! sound (car liste))
+      (set! color (cadr liste))
+      (set! ignore? (caddr liste))
+      (set! duration (cadddr liste)))
+    
+    ;Changer la note du triangle
+    (define (changeSound note)
+      (set! sound note))
+    ;Changer la couleur du triangle
+    (define (changeColor newcolor)
+      (set! color newcolor))
+    ;Toggle la variable bool ignore?
+    (define (toggleIgnore)
+      (set! ignore? (not ignore?)))
+    ;Changer la durée avant de passer au triangle suivant
+    (define (changeDuration dur)
+      (set! duration dur))
+    
+    (super-new)))
+
+(define (generateSquares n)
+  (build-vector n (lambda(i) (new (squares% i)))))
+
+(define-struct note (num gamme) #:transparent)
+
+(define (setTypedValue n list)                 ;On change les valeurs du carré n par celles contenues dans la liste (sound color duration)
+  (define square (vector-ref ALLSQUARES n))
+  (send square changeSound (car list))
+  (send square changeColor (cadr list))
+  (send square changeDuration (caddr list)))
+
+
+(define ALLSQUARES (generateSquares (* 12 12)))
+
+(define (loadSquare n)      ;On affiche les valeurs actuelles du carré dans l'éditeur
+  (define square (vector-ref ALLSQUARES n))     ;Le carré à copier
+  (define note (send square getSound))          ;On récupere la note
+  (define num (note-num note))                  ;On récupere le numéro de la note
+  (define gamme (note-gamme note))              ;On récupere la gamme de la note
+  (send CHOICENOTE set-selection (modulo num 12))
+  (send CHOICERANGE set-value gamme)
+  (send CHOICEDURATION set-value (number->string (send square getDuration))))
+
+(define copiedValues (list null 'grey #f 1)) ;Valeur de la copie (par défaut)
+
+(define (copyValues)     ;On renvoie la liste des valeurs du carré en cours d'édition
+  (define numero (string->number (send TITLEEDITION get-value)))
+  (define square (vector-ref ALLSQUARES numero))
+  (set! copiedValues (send square giveAll)))
+
+
+(define (pasteValues)   ;On colle les valeurs de la liste copiedValues dans la note sélectionnée
+  (define numero (string->number (send TITLEEDITION get-value)))
+  (define square (vector-ref ALLSQUARES numero))
+  (send square changeAll copiedValues)
+  (loadSquare numero))
