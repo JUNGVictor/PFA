@@ -149,7 +149,7 @@
           (define numerocarre (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1))
           (define note (make-note null null))
           (define duree 0.2)
-          (setTypedValue numerocarre (list note "gray" duree #f))
+          (setTypedValue numerocarre (list note "gray" #f duree))
           (when (and (= FIRSTSQUARE numerocarre) (= LASTSQUARE numerocarre))
             (set! FIRSTSQUARE 144)
             (set! LASTSQUARE -1))
@@ -195,6 +195,7 @@
        (min-height SIZE)
        (paint-callback
         (lambda (c dc)
+          (send dc set-background (make-object color% 50 50 50))
           (send dc clear)
           (if PLAY
               (void)
@@ -287,8 +288,10 @@
       number)
     
     (define (draw-with the-current-dc)
-      (send the-current-dc set-brush "blue" 'solid)
-      (send the-current-dc draw-rectangle (- posX HALFSIZE) (- posY HALFSIZE) SIZESQUARE SIZESQUARE))
+      (send the-current-dc set-pen (make-object color% 70 220 255) 2 'solid)
+      (send the-current-dc set-smoothing 'unsmoothed )
+      (send the-current-dc set-brush (make-object color% 70 220 255) 'solid)
+      (send the-current-dc draw-rectangle (- posX HALFSIZE) (- posY HALFSIZE) (+ 1 SIZESQUARE) (+ 1 SIZESQUARE)))
     (super-new)))
 
 (define SELECTEUR (new selecteur%))
@@ -365,7 +368,13 @@
       (set! duration dur))
     ;Le carré se dessine
     (define (draw-with the-current-dc)
-      (send the-current-dc set-brush color 'solid)
+      (send the-current-dc set-pen "black" 1 'solid)
+      (if ignore?
+          (send the-current-dc set-brush "red" 'crossdiag-hatch)
+          (if (= duration 0)
+              (send the-current-dc set-brush (make-object color% 100 200 240) 'solid )
+              (send the-current-dc set-brush color 'solid )))
+      (send the-current-dc set-smoothing 'smoothed )
       (send the-current-dc draw-rectangle (- posX REALHALFSIZE) (- posY REALHALFSIZE) REALSIZE REALSIZE))
 
     (super-new)))
@@ -435,7 +444,12 @@
                           (if PLAY
                               (if (> ACC (- (vector-length ALLSQUARES) 1))
                                   (if (send LOOP get-value)
-                                      (begin (set! ACC 0))
+                                      (if (= LASTSQUARE -1)
+                                          (begin (set! PLAY #f)
+                                             (send PLAYALLSQUARE stop)
+                                             (send BUTTONPLAY set-label "Jouer")
+                                             (set! ACC 0))
+                                          (set! ACC 0))
                                       (begin (set! PLAY #f)
                                              (send PLAYALLSQUARE stop)
                                              (send BUTTONPLAY set-label "Jouer")
