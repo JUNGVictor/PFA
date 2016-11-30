@@ -1,0 +1,716 @@
+#lang racket/gui
+
+(require rackunit rsound rsound/piano-tones)
+
+(printf "Host-APIs disponibles: ~a~n" (all-host-apis))
+(host-api 'paMME)
+
+
+(define (note->number)
+  (define note (send CHOICENOTE get-selection))
+  (define gamme (send CHOICERANGE get-value))
+  (+ (* (+ gamme 1) 12) note))
+
+(define PLAY #f)
+(define ACC 0)
+;#############################GUI
+(define SIZE 800) ;Taille du canvas
+(define MARGIN 22) ;Taille de la marge sur les 4 cotés
+(define LITTLESPACE 2) ;Moitié de la taille de l'espace entre chaque carré
+(define NBSQUARESWIDTH 12) ;Nombre de carrés sur une ligne
+(define SIZESQUARE (/ (- SIZE (* 2 MARGIN)) NBSQUARESWIDTH)) ;Largeur d'un carré (n'est pas la largeur du carré qui s'affichera) , sert essentiellement au placement des carrés dans le canvas
+(define HALFSIZE (/ SIZESQUARE 2)) ;Moitié de la largeur d'un carré (même utilité que SIZESQUARE)
+(define REALHALFSIZE (- HALFSIZE LITTLESPACE)) ;Moitié de la largeur d'un carré affiché
+(define REALSIZE (* REALHALFSIZE 2)) ;Largeur d'un carré affiché
+(define FIRSTSQUARE 144) ;Numéro du premier carré avec un son non nul
+(define LASTSQUARE -1) ;Numéro du dernier carré avec un son non nul
+(define LISTLOOP empty)
+(define reload (make-object bitmap% "reload.png" 'unknown #f #f (/ 61 REALSIZE)))
+
+(define FRAME
+  (new frame%
+       (label "Nom du projet")
+       (stretchable-width #f)
+       (stretchable-height #f)))
+
+(define HPANEL
+  (new horizontal-panel%
+       (parent FRAME)
+       (alignment '(center center))))
+
+
+;####################Panneau pour éditer un objet square%
+(define VPANELEDITION
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+;Indiquer le carré sélectionné
+(define TITLEEDITION
+  (new message%
+       (parent VPANELEDITION)
+       (label "Carré n°001")
+       (font (make-object font% 24 'swiss))
+       (vert-margin 30)))
+
+;On charge les valeurs du carré selectionné
+
+;Choisir la gamme
+(define CHOICERANGE   ;
+  (new slider%
+       (parent VPANELEDITION)
+       (label "Gamme")
+       (style '(vertical))
+       (min-value 1)
+       (max-value 8)
+       (init-value 5)
+       (min-height 100)
+       (stretchable-height #f)))
+
+;Choisir la note
+(define CHOICENOTE   ;
+  (new choice%
+       (parent VPANELEDITION)
+       (label "Note : ")
+       (choices '("Do" "Do#" "Ré" "Ré#" "Mi" "Fa" "Fa#" "Sol" "Sol#" "La" "La#" "Si"))))
+
+;Ecouter la note actuelle
+(define BOUTTONTEST
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 20)
+       (label "Jouer la note")
+       (callback
+        (lambda (b evt)
+               (play (piano-tone (note->number)))))))
+
+;Choisir après combien de temps la prochaine note se joue
+(define CHOICEDURATION
+  (new text-field%
+       (parent VPANELEDITION)
+       (vert-margin 30)
+       (label "Durée en secondes :")
+       (init-value "0.2")))
+
+(define IGNORESQUARE
+  (new check-box%
+       (parent VPANELEDITION)
+       (vert-margin 30)
+       (label "Ignorer la note ? ")))
+
+(define LOOPSQUARE
+  (new check-box%
+       (parent VPANELEDITION)
+       (label "Boucle? ")))
+
+(define FIRSTSQUARELOOP
+  (new text-field%
+       (parent VPANELEDITION)
+       (label "Premier carré :")))
+
+(define LASTSQUARELOOP
+  (new text-field%
+       (parent VPANELEDITION)
+       (label "Dernier carré :")))
+
+(define NUMBERLOOP
+  (new text-field%
+       (parent VPANELEDITION)
+       (label "Combien de boucle? :")))
+
+;Copie les caractéristiques du carré sélectionné
+(define BUTTONCOPY
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Copier")
+       (callback
+        (lambda (b evt)
+          (copyValues)))))
+
+;Ecris les valeurs enregistrées par le bouton "Copier" dans les champs correspondants
+(define BUTTONPASTE
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (label "Coller")
+       (callback
+        (lambda (b evt)
+          (pasteValues)))))
+
+;Applique les valeurs rentrées au carré sélectionné
+(define BUTTONSET
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (min-width 200)
+       (label "Appliquer les\nchangements")
+       (callback
+        (lambda (b evt)
+          (define numerocarre (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1))
+          (define duree (string->number (send CHOICEDURATION get-value)))
+          (define note (make-note (note->number) (send CHOICERANGE get-value)))
+          (define ignore? (send IGNORESQUARE get-value))
+          (define isALoop? (send LOOPSQUARE get-value))
+          (define firstsquareloop (string->number (send FIRSTSQUARELOOP get-value)))
+          (define lastsquareloop (string->number (send LASTSQUARELOOP get-value)))
+          (define numberloop (string->number (send NUMBERLOOP get-value)))
+          (define loop (list firstsquareloop lastsquareloop numberloop))
+          (define color "green")
+          (when (and isALoop? (= firstsquareloop lastsquareloop) (send (vector-ref ALLSQUARES lastsquareloop) loop?))   ;On essaie de mettre une boucle sur un unique carré qui est une boucle
+            (define squareloop (send (vector-ref ALLSQUARES lastsquareloop) getLoop))    ;On récupère les informations sur la boucle que l'on veut boucler
+            (set! loop (list (car squareloop) (cadr squareloop) numberloop)))      ;Et on met les informations récupéré pour la nouvelle boucle.
+          (if isALoop?
+              (begin (if (checkLoopValues firstsquareloop lastsquareloop numerocarre)
+                         (begin (set! duree 0)
+                                (set! note (make-note null null))
+                                (set! color "yellow"))
+                         (set! loop null)))
+              (set! loop null))
+          (setTypedValue numerocarre (list note color ignore? duree loop))
+          (when (> FIRSTSQUARE numerocarre) (set! FIRSTSQUARE numerocarre))
+          (when (< LASTSQUARE numerocarre) (set! LASTSQUARE numerocarre))
+          (send CANVAS refresh-now)))))
+
+(define BUTTONRESET
+  (new button%
+       (parent VPANELEDITION)
+       (vert-margin 10)
+       (min-width 200)
+       (label "Remettre par\ndéfaut")
+       (callback
+        (lambda (b evt)
+          (define numerocarre (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1))
+          (define note (make-note null null))
+          (define duree 0.2)
+          (setTypedValue numerocarre (list note "gray" #f duree null))
+          (when (and (= FIRSTSQUARE numerocarre) (= LASTSQUARE numerocarre))
+            (set! FIRSTSQUARE 144)
+            (set! LASTSQUARE -1))
+          (when (= FIRSTSQUARE numerocarre) (set! FIRSTSQUARE (searchFirstSquare FIRSTSQUARE FIRSTSQUARE)))
+          (when (= LASTSQUARE numerocarre) (set! LASTSQUARE (searchLastSquare LASTSQUARE LASTSQUARE)))
+          (send CANVAS refresh-now)))))
+
+
+;####################Canvas
+(define S #f)
+(define (findSquare x y v)
+  (for ([square (in-vector v)])
+    (define posX (send square getPosX))
+    (define posY (send square getPosY))
+    (if (and (and (>= x (- posX REALHALFSIZE))
+                  (<= x (+ posX REALHALFSIZE)))
+             (and (>= y (- posY REALHALFSIZE))
+                  (<= y (+ posY REALHALFSIZE))))
+        (set! S square)
+        (void))))
+
+(define MY-CANVAS%
+  (class canvas%
+    (define/override (on-event evt)
+      (case (send evt get-event-type)
+        ((left-down) (define posx (send evt get-x))
+                     (define posy (send evt get-y))
+                     (findSquare posx posy ALLSQUARES)
+                     (when S
+                       (loadSquare (send S getNumber))
+                       (send SELECTEUR changePosX! (send S getPosX))
+                       (send SELECTEUR changePosY! (send S getPosY))
+                       (send SELECTEUR changeNum! (send S getNumber))
+                       (send this refresh-now)))
+        (else (set! S #f))))
+    (super-new)))
+          
+(define CANVAS
+  (new MY-CANVAS%
+       (parent HPANEL)
+       (style '(border))
+       (min-width SIZE)
+       (min-height SIZE)
+       (paint-callback
+        (lambda (c dc)
+          (send dc set-background (make-object color% 50 50 50))
+          (send dc clear)
+          (if PLAY
+              (send SELECTEUR draw-with dc)
+              (send SELECTEUR draw-with dc))
+          (for ([square (in-vector ALLSQUARES)])
+            (send square draw-with dc))
+          (send LINESFORLOOP draw-with dc)))))
+
+
+;####################Panneau des options
+(define VPANELSETTINGS
+  (new vertical-panel%
+       (parent HPANEL)
+       (alignment '(center top))
+       (min-width 200)))
+
+(define TITLESETTINGS
+  (new message%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (font (make-object font% 24 'swiss))
+       (label "Options")))
+
+
+(define LECTUREOPTION   ;Option de lecture (par défaut, tout jouer)
+  (new choice%
+       (parent VPANELSETTINGS)
+       (label "Lecture :")
+       (choices '("Tout jouer" "Ignorer les carrés gris" "Ignorer B/A"))))
+
+;Permet de jouer la partition en boucle
+(define LOOP
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Jouer en boucle")))
+
+;Permet de jouer à partir du selecteur
+(define PLAYSELECTOR
+  (new check-box%
+       (parent VPANELSETTINGS)
+       (vert-margin 30)
+       (label "Jouer à partir\ndu selecteur")))
+
+;Commence à jouer la partition depuis le carré sélectionné
+(define BUTTONPLAY
+  (new button%
+       (parent VPANELSETTINGS)
+       (vert-margin 100)
+       (min-height 200)
+       (min-width 200)
+       (label "JOUER")
+       (font (make-object font% 24 'swiss))
+       (callback (lambda (b evt)
+                   (if PLAY
+                       (begin (set! PLAY #f)
+                              (set! ACC 0)
+                              (send BUTTONPLAY set-label "JOUER"))
+                       (begin (set! PLAY #t)
+                              (when (send PLAYSELECTOR get-value) (set! ACC (- (send SELECTEUR getNum) 1)))
+                              (send PLAYALLSQUARE start 0)
+                              (send BUTTONPLAY set-label "STOP")))))))
+
+(send FRAME show #t)
+
+
+(define (sec n)
+(inexact->exact (round (* n 44100))))
+
+(define selecteur% ;Affiche le carré que l'on modifie
+  (class object%
+    (public getPosX getPosY changePosX! changePosY! changeNum! getNum draw-with)
+    (define posX -1000)
+    (define posY -1000)
+    (define number 0)
+    ;Récupérer la position x
+    (define (getPosX)
+      posX)
+    ;Récupérer la position y
+    (define (getPosY)
+      posY)
+    ;Changer la position x
+    (define (changePosX! x)
+      (set! posX x))
+    ;Changer la position y
+    (define (changePosY! y)
+      (set! posY y))
+    ;Change le numero du carré selectionné
+    (define (changeNum! num)
+      (set! number num))
+    ;Donne le numéro du carré selectionné
+    (define (getNum)
+      number)
+    ;Permet au selecteur d'être dessiné
+    (define (draw-with the-current-dc)
+      (send the-current-dc set-pen (make-object color% 70 220 255) 2 'solid)
+      (send the-current-dc set-smoothing 'unsmoothed )
+      (send the-current-dc set-brush (make-object color% 70 220 255) 'solid)
+      (send the-current-dc draw-rectangle (- posX HALFSIZE) (- posY HALFSIZE) (+ 1 SIZESQUARE) (+ 1 SIZESQUARE)))
+    (super-new)))
+
+(define SELECTEUR (new selecteur%))
+
+
+(define linesforloop%    ;Un objet linesforloop montrera à l'aide de 2 lignes dans le canvas
+  (class object%         ;le début et la fin d'un carré loop
+    (public getSquareLoopX getSquareLoopY getSquareBeginX getSquareBeginY getSquareEndX getSquareEndY
+            changeSquareLoopX! changeSquareLoopY! changeSquareBeginX! changeSquareBeginY! changeSquareEndX! changeSquareEndY!
+            draw-with)
+    ;Valeurs des 3 positions
+    ;Position du carré loop
+    (define squareLoopX -1000)
+    (define squareLoopY -1000)
+    ;Position du carré de début
+    (define squareBeginX -1000)
+    (define squareBeginY -1000)
+    ;Position du carré de fin
+    (define squareEndX -1000)
+    (define squareEndY -1000)
+
+    ;Récuperer les différentes positions
+    (define (getSquareLoopX)
+      squareLoopX)
+    (define (getSquareLoopY)
+      squareLoopY)
+    (define (getSquareBeginX)
+      squareBeginX)
+    (define (getSquareBeginY)
+      squareBeginY)
+    (define (getSquareEndX)
+      squareEndX)
+    (define (getSquareEndY)
+      squareEndY)
+
+    ;Changer les différentes positions
+    (define (changeSquareLoopX! x)
+      (set! squareLoopX x))
+    (define (changeSquareLoopY! y)
+      (set! squareLoopY y))
+    (define (changeSquareBeginX! x)
+      (set! squareBeginX x))
+    (define (changeSquareBeginY! y)
+      (set! squareBeginY y))
+    (define (changeSquareEndX! x)
+      (set! squareEndX x))
+    (define (changeSquareEndY! y)
+      (set! squareEndY y))
+
+    ;Dessine les lignes
+    (define (draw-with the-current-dc)
+      (define squareSelected (vector-ref ALLSQUARES (send SELECTEUR getNum)))
+      (if (send squareSelected loop?)
+          (let() (define squareBegin (vector-ref ALLSQUARES (car (send squareSelected getLoop))))
+                 (define squareEnd (vector-ref ALLSQUARES (cadr (send squareSelected getLoop))))
+                 (send this changeSquareLoopX! (send squareSelected getPosX))
+                 (send this changeSquareLoopY! (send squareSelected getPosY))
+                 (send this changeSquareBeginX! (send squareBegin getPosX))
+                 (send this changeSquareBeginY! (send squareBegin getPosY))
+                 (send this changeSquareEndX! (send squareEnd getPosX))
+                 (send this changeSquareEndY! (send squareEnd getPosY))
+                 (send the-current-dc set-pen "red" 1 'solid)
+                 (send the-current-dc draw-line
+                       (send this getSquareLoopX)
+                       (send this getSquareLoopY)
+                       (send this getSquareBeginX)
+                       (send this getSquareBeginY))
+                 (send the-current-dc draw-line
+                       (send this getSquareLoopX)
+                       (send this getSquareLoopY)
+                       (send this getSquareEndX)
+                       (send this getSquareEndY)))
+          (void)))
+
+    (super-new)))
+
+(define LINESFORLOOP (new linesforloop%))
+                 
+      
+    
+    
+       
+      
+    
+
+(define (squares% n)
+  (class object%                     
+    ;On donne accès à ces fonctions :
+    (public not-sound? getSound getColor getNumber getDuration giveValues giveAll
+            getPosX getPosY
+            isIgnored? toggleIgnore playSound
+            changeSound changeAll changeColor changeDuration
+            loop? getLoop changeLoop in-listloop? changelistloop
+            draw-with)
+
+    (define number n)            ;numéro du carré
+    (define sound (make-note null null))          ;pas de son par défaut - son : structure
+    (define color "gray")         ;couleur grise
+    (define ignore? #f)          ;non ignoré
+    (define duration 0.2)          ;durée avant de passer au carré suivant (en secondes)
+    (define posX (+ MARGIN (+ (* (modulo (- number 1) NBSQUARESWIDTH) SIZESQUARE) HALFSIZE)))    ;position x du milieu du carré
+    (define posY (+ MARGIN (+ (* (quotient (- number 1) NBSQUARESWIDTH) SIZESQUARE) HALFSIZE)))  ;position y du milieu du carré
+    (define loop null)
+    (define in-listloop #f)
+    ;#######################################
+    ;RECUPERATION DES VARIABLES
+    ;RECUPERER TOUTES LES VARIABLES (sauf numero)
+    (define (giveAll)
+      (list sound color ignore? duration loop))
+    ;Un son est-il défini? #t si non, #f si oui
+    (define (not-sound?)
+      (null? (note-num sound)))
+    ;Recupérer le son
+    (define (getSound)
+      sound)
+    ;Recupérer la duree
+    (define (getDuration)
+      duration)
+    ;Récupérer la couleur
+    (define (getColor)
+      color)
+    ;Récupérer le numéro du carré
+    (define (getNumber)
+      number)
+    ;Récupérer la positon x du carré
+    (define (getPosX)
+      posX)
+    ;Récupérer la position y du carré
+    (define (getPosY)
+      posY)
+    ;Recupere les valeurs sound, color et duration dans une liste
+    (define (giveValues)
+      (list sound color duration))
+    ;Le triangle est-il ignoré? (si oui, on ne le joue pas)
+    (define (isIgnored?)
+      ignore?)
+    ;Jouer le son
+    (define (playSound)
+      (play (piano-tone (note-num sound))))
+    ;#######################################
+    ;MODIFICATION DES VARIABLES
+    ;CHANGE TOUTES LES VARIABLES
+    (define (changeAll liste)    ;liste : (list sound color ignore? duration loop)
+      (set! sound (car liste))
+      (set! color (cadr liste))
+      (set! ignore? (caddr liste))
+      (set! duration (cadddr liste))
+      (set! loop (cadr (cdddr liste))))
+    
+    ;Changer la note du triangle
+    (define (changeSound note)
+      (set! sound note))
+    ;Changer la couleur du triangle
+    (define (changeColor newcolor)
+      (set! color newcolor))
+    ;Toggle la variable bool ignore?
+    (define (toggleIgnore)
+      (set! ignore? (not ignore?)))
+    ;Changer la durée avant de passer au triangle suivant
+    (define (changeDuration dur)
+      (set! duration dur))
+
+    ;Option de boucle
+    ;Le carré est-il une boucle?
+    (define (loop?)
+      (not (equal? loop null)))
+    ;Envoie les informations sur la boucle (list premier dernier nombre-de-lecture)
+    (define (getLoop)
+      loop)
+    ;Change les informations sur la boucle (newloop = (list premier dernier nombre-de-lecture) ou null)
+    (define (changeLoop newloop)
+      (set! loop newloop))
+    ;Definie si la loop a été inséré dans LISTLOOP
+    (define (in-listloop?)
+      in-listloop)
+    (define (changelistloop new-inlistloop)
+      (set! in-listloop new-inlistloop))
+    
+    ;Le carré se dessine
+    (define (draw-with the-current-dc)
+      (send the-current-dc set-pen "black" 1 'solid)
+      (if ignore?
+          (send the-current-dc set-brush "red" 'crossdiag-hatch)
+          (if (= duration 0)
+              (send the-current-dc set-brush (make-object color% 100 200 240) 'solid )
+              (send the-current-dc set-brush color 'solid )))
+      (send the-current-dc set-smoothing 'smoothed )
+      (if (send this loop?)
+          (send the-current-dc draw-bitmap reload (- posX REALHALFSIZE) (- posY REALHALFSIZE))
+          (send the-current-dc draw-rectangle (- posX REALHALFSIZE) (- posY REALHALFSIZE) REALSIZE REALSIZE)))
+
+    (super-new)))
+
+(define (generateSquares n)
+  (build-vector n (lambda(i) (new (squares% (+ i 1))))))
+
+(define-struct note (num gamme) #:transparent)
+
+(define (setTypedValue n list)                 ;On change les valeurs du carré n par celles contenues dans la liste (sound color duration ignore)
+  (define square (vector-ref ALLSQUARES n))
+  (send square changeAll list))
+
+
+(define ALLSQUARES (generateSquares (* NBSQUARESWIDTH NBSQUARESWIDTH)))
+(define NBSQUARES (vector-length ALLSQUARES))
+
+(define (loadSquare n)      ;On affiche les valeurs actuelles du carré dans l'éditeur
+  (define oldsquare (vector-ref ALLSQUARES (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1)))
+  (define square (vector-ref ALLSQUARES (- n 1)))   ;Le carré à copier
+  (define note (send square getSound))              ;On récupere la note
+  (define num (note-num note))                      ;On récupere le numéro de la note
+  (define gamme (note-gamme note))                  ;On récupere la gamme de la note
+  (define ignore? (send square isIgnored?))
+  (send TITLEEDITION set-label (string-append "Carré n°" (number->string (send square getNumber))))
+  (if (and (not (null? num)) (not (null? gamme)))
+      (begin (send CHOICENOTE set-selection (modulo num 12))
+             (send CHOICERANGE set-value gamme))
+      (begin (send CHOICENOTE set-selection 0)
+             (send CHOICERANGE set-value 5)))
+  (send IGNORESQUARE set-value ignore?)
+  (send LOOPSQUARE set-value (send square loop?))
+  (define loopinfo (send square getLoop))
+  (if (send square loop?)
+      (begin (send FIRSTSQUARELOOP set-value (number->string (car loopinfo)))
+             (send LASTSQUARELOOP set-value (number->string (cadr loopinfo)))
+             (send NUMBERLOOP set-value (number->string (caddr loopinfo))))
+      (begin (send FIRSTSQUARELOOP set-value "0")
+             (send LASTSQUARELOOP set-value "0")
+             (send NUMBERLOOP set-value "0")))
+  (send CHOICEDURATION set-value (number->string (send square getDuration))))
+
+(define copiedValues (list null "gray" #f 0)) ;Valeur de la copie (par défaut)
+
+(define (copyValues)     ;On renvoie la liste des valeurs du carré en cours d'édition
+  (define numero (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1))
+  (define square (vector-ref ALLSQUARES numero))
+  (set! copiedValues (send square giveAll)))
+
+
+(define (pasteValues)   ;On colle les valeurs de la liste copiedValues dans la note sélectionnée
+  (define numero (- (string->number (first (regexp-match "[0-9]+" (send TITLEEDITION get-label)))) 1))
+  (define square (vector-ref ALLSQUARES numero))
+  (send square changeAll copiedValues)
+  (loadSquare (+ 1 numero))
+  (send CANVAS refresh-now))
+
+(define (searchFirstSquare FIRST newFirst)
+  (if (= newFirst (vector-length ALLSQUARES))
+      144
+      (if (and (not (send (vector-ref ALLSQUARES newFirst) not-sound?)) (> newFirst FIRST))
+          newFirst
+          (searchFirstSquare FIRST (+ 1 newFirst)))))
+  
+(define (searchLastSquare LAST newLast)
+  (if (< newLast 0)
+      -1
+      (if (and (not (send (vector-ref ALLSQUARES newLast) not-sound?)) (< newLast LAST))
+          newLast
+          (searchLastSquare LAST (- newLast 1)))))
+
+(define (checkLoopValues first last actual)
+  (cond ((< first actual last) #f)
+        ((< first 0) #f)
+        ((> last (- (* NBSQUARESWIDTH NBSQUARESWIDTH) 1)) #f)
+        ((> first last))
+        ((= first actual) #f)
+        ((= last actual) #f)
+        (else #t)))
+
+;#############################Temps
+(define PLAYALLSQUARE
+  (new timer%
+       (notify-callback (lambda ()
+                          (if PLAY
+                              (if (> ACC (- (vector-length ALLSQUARES) 1))
+                                  (if (send LOOP get-value)
+                                      (if (= LASTSQUARE -1)
+                                          (begin (set! PLAY #f)
+                                             (send PLAYALLSQUARE stop)
+                                             (send BUTTONPLAY set-label "JOUER")
+                                             (set! ACC 0))
+                                          (set! ACC 0))
+                                      (begin (set! PLAY #f)
+                                             (send PLAYALLSQUARE stop)
+                                             (send BUTTONPLAY set-label "JOUER")
+                                             (set! ACC 0)))
+                                  (lastPlay))
+                              (set! ACC 0))))))
+                                           
+(define (lastPlay)
+  (when (send (vector-ref ALLSQUARES ACC) loop?) (addLoopToList ACC))
+  (when (not (equal? empty LISTLOOP)) (loopPlaying))
+  (when (send (vector-ref ALLSQUARES ACC) loop?) (addLoopToList ACC))
+  (define square (vector-ref ALLSQUARES ACC))
+  (define note (note-num (send square getSound)))
+  (define duration (send square getDuration))
+  (define option (send LECTUREOPTION get-selection))
+  (when (= option 0) (playAll square duration note))
+  (when (= option 1) (ignoreGray square duration note))
+  (when (= option 2) (ignoreBA square duration note)))
+                              
+
+(define (playAll square duration note)
+  (define ignored? (send square isIgnored?))
+  (set! ACC (+ ACC 1))
+  (if ignored?
+      (begin (send PLAYALLSQUARE stop)
+             (send PLAYALLSQUARE start 0))
+      (if (equal? (send square getColor) "green")
+          (begin (when (not (equal? 0 duration)) (drawSelectorAnimation ACC))
+                 (play (piano-tone note))
+                 (send PLAYALLSQUARE stop)
+                 (send PLAYALLSQUARE start (inexact->exact (floor (* duration 1000)))))
+          (begin (when (not (equal? 0 duration)) (drawSelectorAnimation ACC))
+                 (send PLAYALLSQUARE stop)
+                 (send PLAYALLSQUARE start (inexact->exact (floor (* duration 1000))))))))
+
+(define (ignoreGray square duration note)
+  (define ignored? (send square isIgnored?))
+  (set! ACC (+ ACC 1))
+  (if ignored?
+      (begin (send PLAYALLSQUARE stop)
+             (send PLAYALLSQUARE start 0))
+      (if (equal? (send square getColor) "green")
+          (begin (when (not (equal? 0 duration)) (drawSelectorAnimation ACC))
+                 (play (piano-tone note))
+                 (send PLAYALLSQUARE stop)
+                 (send PLAYALLSQUARE start (inexact->exact (floor (* duration 1000)))))
+          (begin (send PLAYALLSQUARE stop)
+                 (send PLAYALLSQUARE start 0)))))
+
+(define (ignoreBA square duration note)
+  (define ignored? (send square isIgnored?))
+  (set! ACC (+ ACC 1))
+  (if ignored?
+      (begin (send PLAYALLSQUARE stop)
+             (send PLAYALLSQUARE start 0))
+      (if (equal? (send square getColor) "green")
+          (begin (when (not (equal? 0 duration)) (drawSelectorAnimation ACC))
+                 (play (piano-tone note))
+                 (send PLAYALLSQUARE stop)
+                 (send PLAYALLSQUARE start (inexact->exact (floor (* duration 1000)))))
+          (if (< (- (send square getNumber) 1) FIRSTSQUARE)
+              (begin (send PLAYALLSQUARE stop)
+                     (send PLAYALLSQUARE start 0))
+              (if (> (- (send square getNumber) 1) LASTSQUARE)
+                  (begin (send PLAYALLSQUARE stop)
+                         (send PLAYALLSQUARE start 0))
+                  (begin (when (not (equal? 0 duration)) (drawSelectorAnimation ACC))
+                         (send PLAYALLSQUARE stop)
+                         (send PLAYALLSQUARE start (inexact->exact (floor (* duration 1000))))))))))
+
+
+(define (drawSelectorAnimation number)
+  (define square (vector-ref ALLSQUARES (- number 1)))
+  (send SELECTEUR changePosX! (send square getPosX))
+  (send SELECTEUR changePosY! (send square getPosY))
+  (send SELECTEUR changeNum! (- number 1))
+  (send CANVAS refresh-now))
+
+(define (addLoopToList number)
+  (define squareL (vector-ref ALLSQUARES number))
+  (define loopInfo (send squareL getLoop)) ; (list premier dernier nombre de loop)
+  (define already-in-list? (send squareL in-listloop?))
+  (define ignored (send squareL isIgnored?))
+  (when (and (not already-in-list?) (not ignored))
+    (when (and (equal? (car loopInfo) (cadr loopInfo)) (send (vector-ref ALLSQUARES (car loopInfo)) loop?)) (set! loopInfo (list (car loopInfo) (cadr loopInfo) (+ 1 (caddr loopInfo)))))
+    (set! LISTLOOP (cons (append loopInfo (list number)) LISTLOOP)) (send squareL changelistloop #t) (set! ACC (car loopInfo))))
+    
+
+(define (loopPlaying)
+  (define firstsquare (caar LISTLOOP))
+  (define lastsquare (cadar LISTLOOP))
+  (define loopnumber (caddar LISTLOOP))
+  (define loopSquareNumber (car (cdddar LISTLOOP)))
+      (when (> ACC lastsquare)
+        (if (equal? loopnumber 1)
+            (begin (set! LISTLOOP (cdr LISTLOOP))
+                   (send (vector-ref ALLSQUARES loopSquareNumber) changelistloop #f)
+                   (set! ACC (+ 1 loopSquareNumber)))
+            (begin (set! ACC firstsquare)
+                   (set! LISTLOOP (cons (list firstsquare lastsquare (- loopnumber 1) loopSquareNumber) (cdr LISTLOOP)))))))
+
+
